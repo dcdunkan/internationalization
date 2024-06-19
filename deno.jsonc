@@ -1,0 +1,8 @@
+{
+    "lock": false,
+    "fmt": {
+        "useTabs": false,
+        "indentWidth": 4,
+        "lineWidth": 80
+    }
+}
