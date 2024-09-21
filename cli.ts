@@ -6,7 +6,7 @@ import {
 import { extname } from "jsr:@std/path/extname";
 import { resolve } from "jsr:@std/path/resolve";
 import { exists } from "jsr:@std/fs/exists";
-import { bold, dim, red, yellow } from "jsr:@std/fmt/colors";
+import { yellow } from "jsr:@std/fmt/colors";
 import { parseArgs } from "jsr:@std/cli/parse-args";
 import { getLogger } from "./common.ts";
 
@@ -107,7 +107,7 @@ async function updateTypes(filepath: string, sources: Set<string>) {
         const list = Array.from(value.placables)
             .map((placeable) => `"${placeable}"`)
             .join(" ");
-        output += `\n${indent}readonly "${key}": readonly [${list}];`;
+        output += `\n${indent}"${key}": readonly [${list}];`;
     }
     output += `\n}\n`;
     await Deno.writeTextFile(filepath, output);

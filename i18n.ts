@@ -5,8 +5,11 @@ import {
     type Message,
 } from "npm:@fluent/bundle@0.18.0";
 import { negotiateLanguages } from "npm:@fluent/langneg@0.7.0";
-import { type Context } from "https://deno.land/x/grammy@v1.24.1/mod.ts";
-import { walk, WalkOptions } from "jsr:@std/fs/walk";
+import {
+    type Context,
+    type MiddlewareFn,
+} from "https://deno.land/x/grammy@v1.30.0/mod.ts";
+import { walk, type WalkOptions } from "jsr:@std/fs/walk";
 import { relative } from "jsr:@std/path/relative";
 import { join } from "jsr:@std/path/join";
 import { SEPARATOR } from "jsr:@std/path/constants";
@@ -37,9 +40,20 @@ export interface ResourceOptions {
     bundleOptions?: Partial<FluentBundleOptions>;
 }
 
-const DEFAULT_FALLBACK_LOCALE = "en" as const;
-const ALLOW_OVERRIDES_BY_DEFAULT = false;
+export interface I18nFlavor {
+    translate: () => string;
+}
 
+const DEFAULT_FALLBACK_LOCALE = "en" as const;
+const DEFAULT_ALLOW_OVERRIDES = false;
+
+/**
+ * This class makes it possible to easily include and use different languages
+ * for different users of your bot.
+ * ```ts
+ * const instance = new I18n({ fallbackLocale: "en" });
+ * ```
+ */
 export class I18n<
     C extends Context = Context,
     T extends MessageTypings = MessageTypings,
@@ -106,13 +120,16 @@ export class I18n<
         // lookup the bundle with the locale, or create a new one.
         const bundle = this.#bundles.has(locale)
             ? this.#bundles.get(locale)
-            : new FluentBundle(locale, options?.bundleOptions);
+            : new FluentBundle(locale, {
+                ...this.options.bundleOptions,
+                ...options?.bundleOptions,
+            });
         assert(bundle !== undefined);
 
         const resource = new FluentResource(source);
         const errors = bundle.addResource(resource, {
             allowOverrides: options?.allowOverrides ??
-                ALLOW_OVERRIDES_BY_DEFAULT,
+                DEFAULT_ALLOW_OVERRIDES,
         });
 
         this.#bundles.set(locale, bundle);
@@ -176,7 +193,7 @@ export class I18n<
             }
         }
 
-        // Fallbacking:
+        // Fallback locale:
         const pattern = this.#getPattern(fallbackBundle, key);
 
         if (pattern == null) {
@@ -218,22 +235,25 @@ export class I18n<
         }
         return formatted;
     }
-}
 
-export async function loadLocaleDirectory<C extends Context = Context>(
-    i18n: I18n<C>,
-    path: string,
-    options?: {
-        walkOptions?: WalkOptions;
-        resourceOptions?: ResourceOptions;
-    },
-): Promise<void> {
+    middleware(): MiddlewareFn<C & I18nFlavor> {
+        return async function (ctx, next): Promise<void> {
+            Object.defineProperty(ctx, "i18n", {
+                writable: true,
+                value: {},
+            });
+
+            await next();
+        };
+    }
 }
 
 /**
  * Load locales from a specified directory.
  */
-export async function loadLocalesDirectory<C extends Context = Context>(
+export async function loadLocalesDirectory<
+    C extends Context = Context,
+>(
     i18n: I18n<C>,
     path: string,
     options?: {
@@ -251,10 +271,10 @@ export async function loadLocalesDirectory<C extends Context = Context>(
         exts: [".ftl"],
     });
 
-    for await (const localeDir of Deno.readDir(cwd)) {
-        if (!localeDir.isDirectory) continue;
-        const path = resolve(cwd, entry.name);
-    }
+    // for await (const localeDir of Deno.readDir(cwd)) {
+    //     if (!localeDir.isDirectory) continue;
+    //     const path = resolve(cwd, entry.name);
+    // }
 
     for await (const entry of walker) {
         const resolved = resolve(entry.path);
@@ -266,6 +286,7 @@ export async function loadLocalesDirectory<C extends Context = Context>(
             content,
             options?.resourceOptions,
         );
+        console.log(locale, resolved);
         for (const error of errors) {
             console.error(
                 `%cerror:%c ${error.message}\n    at ${resolved}`,
