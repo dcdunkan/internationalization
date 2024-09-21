@@ -3,11 +3,12 @@ import {
     parse,
     type PatternElement,
 } from "npm:@fluent/syntax@0.19.0";
-import { extname, resolve } from "jsr:@std/path@0.225.2";
-import { exists } from "jsr:@std/fs@0.229.3/exists";
-import { bold, dim, red, yellow } from "jsr:@std/fmt@0.225.4/colors";
-import { parseArgs } from "jsr:@std/cli@0.224.7/parse-args";
-import { logger } from "./common.ts";
+import { extname } from "jsr:@std/path/extname";
+import { resolve } from "jsr:@std/path/resolve";
+import { exists } from "jsr:@std/fs/exists";
+import { bold, dim, red, yellow } from "jsr:@std/fmt/colors";
+import { parseArgs } from "jsr:@std/cli/parse-args";
+import { getLogger } from "./common.ts";
 
 const { _: _pathArgs, ...args } = parseArgs(Deno.args, {
     boolean: ["watch", "quiet"],
@@ -18,7 +19,7 @@ const { _: _pathArgs, ...args } = parseArgs(Deno.args, {
 });
 const pathArgs = _pathArgs.map((arg) => arg.toString());
 
-const log = logger(args.quiet);
+const log = getLogger(args.quiet);
 
 if (args.output == null || args.output.trim().length === 0) {
     log.error(`specify the --output file.`);
@@ -101,7 +102,6 @@ async function updateTypes(filepath: string, sources: Set<string>) {
 
     let output = `\
 // this file is auto-generated. changes made to this file will be overwritten.\n` +
-        // export const GENERATED_MESSAGE_TYPES = {`;
         `export type GeneratedMessageTypes = {`;
     for (const [key, value] of generated.entries()) {
         const list = Array.from(value.placables)
@@ -110,8 +110,6 @@ async function updateTypes(filepath: string, sources: Set<string>) {
         output += `\n${indent}readonly "${key}": readonly [${list}];`;
     }
     output += `\n}\n`;
-    // output +=
-    //     `export type GeneratedMessageTypes = typeof GENERATED_MESSAGE_TYPES;`;
     await Deno.writeTextFile(filepath, output);
     log.info(`updated output file ${resolve(filepath)}`);
 }

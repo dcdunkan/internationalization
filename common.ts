@@ -1,6 +1,6 @@
-import { bold, dim, red } from "jsr:@std/fmt@0.225.4/colors";
+import { bold, dim, red } from "jsr:@std/fmt/colors";
 
-export function logger(quiet?: boolean) {
+export function getLogger(quiet?: boolean) {
     return {
         info: (...data: unknown[]) =>
             !quiet && console.info(dim(new Date().toISOString()), ...data),

@@ -6,11 +6,11 @@ import {
 } from "npm:@fluent/bundle@0.18.0";
 import { negotiateLanguages } from "npm:@fluent/langneg@0.7.0";
 import { type Context } from "https://deno.land/x/grammy@v1.24.1/mod.ts";
-import { walk, WalkOptions } from "jsr:@std/fs@0.229.3/walk";
-import { relative } from "jsr:@std/path@0.225.2/relative";
-import { join } from "jsr:@std/path@1.0.0-rc.1/join";
-import { SEPARATOR } from "jsr:@std/path@1.0.0-rc.1/constants";
-import { resolve } from "jsr:@std/path@0.225.2/resolve";
+import { walk, WalkOptions } from "jsr:@std/fs/walk";
+import { relative } from "jsr:@std/path/relative";
+import { join } from "jsr:@std/path/join";
+import { SEPARATOR } from "jsr:@std/path/constants";
+import { resolve } from "jsr:@std/path/resolve";
 
 type KeyOf<T> = string & keyof T;
 type MaybePromise<T> = Promise<T> | T;
