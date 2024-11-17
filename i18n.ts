@@ -8,12 +8,7 @@ import { negotiateLanguages } from "npm:@fluent/langneg@0.7.0";
 import {
     type Context,
     type MiddlewareFn,
-} from "https://deno.land/x/grammy@v1.30.0/mod.ts";
-import { walk, type WalkOptions } from "jsr:@std/fs/walk";
-import { relative } from "jsr:@std/path/relative";
-import { join } from "jsr:@std/path/join";
-import { SEPARATOR } from "jsr:@std/path/constants";
-import { resolve } from "jsr:@std/path/resolve";
+} from "https://deno.land/x/grammy@v1.31.3/mod.ts";
 
 type KeyOf<T> = string & keyof T;
 type MaybePromise<T> = Promise<T> | T;
@@ -39,10 +34,19 @@ export interface ResourceOptions {
     allowOverrides?: boolean;
     bundleOptions?: Partial<FluentBundleOptions>;
 }
+export interface MessageKey {
+    id: string;
+    attr?: string;
+}
 
 export interface I18nFlavor {
-    translate: () => string;
+    // locale: string;
+    translate: TranslateFunction;
 }
+export type TranslateFunction = <K extends string>(
+    key: string,
+    variables: TranslationVariables<K>,
+) => string;
 
 const DEFAULT_FALLBACK_LOCALE = "en" as const;
 const DEFAULT_ALLOW_OVERRIDES = false;
@@ -57,7 +61,6 @@ const DEFAULT_ALLOW_OVERRIDES = false;
 export class I18n<
     C extends Context = Context,
     T extends MessageTypings = MessageTypings,
-    U extends KeyOf<T> = StringWithSuggestions<KeyOf<T>>,
 > {
     // While FluentBundle-s are capable of being the carrier of more than one
     // language at a time, here each bundle can carry only one language.
@@ -101,6 +104,7 @@ export class I18n<
                 "Must set a valid fallback (default) locale.",
             );
         }
+
         this.#bundles = new Map<string, FluentBundle>();
         this.options.localeNegotiator ??= function (ctx) {
             return ctx.from?.language_code ??
@@ -137,24 +141,26 @@ export class I18n<
     }
 
     getLocales(): string[] {
-        const locales: string[] = [];
-        for (const locale of this.#bundles.keys()) {
-            locales.push(locale);
-        }
-        return locales;
+        const itr = this.#bundles.keys();
+        return Array.from(itr);
     }
 
-    translate<K extends U>(
-        locale: string,
+    translate<K extends KeyOf<T>>(
+        locale: string, // NOTE: this value is supposed to be returned by the locale negotiator
         messageKey: K,
-        variables?: TranslationVariables<T[K][number]>,
+        ...variables: string extends K // no typings installed / generic types
+            ? [TranslationVariables?]
+            : T[K] extends readonly string[] // its a valid key
+                ? T[K][number] extends never ? [] // and there are variables for the key
+                : [TranslationVariables<T[K][number]>]
+            : []
     ): string {
         const fallbackLocale = this.options.fallbackLocale;
         const fallbackBundle = this.#bundles.get(fallbackLocale);
 
         if (this.#bundles.size === 0) {
             throw new Error(
-                "There are no available locales for translating the message",
+                "There are no locales available for translating the message",
             );
         }
         if (
@@ -183,9 +189,9 @@ export class I18n<
         // the set fallback locale.
         if (negotiatedLocale !== fallbackLocale) {
             const bundle = this.#bundles.get(negotiatedLocale)!;
-            const pattern = this.#getPattern(bundle, key);
+            const pattern = findPattern(bundle, key);
             if (pattern != null) {
-                return this.#formatPattern(bundle, pattern, variables);
+                return formatPattern(bundle, pattern, variables[0]);
             } else {
                 console.error(
                     `No message '${messageKey}' found in locale '${negotiatedLocale}'.`,
@@ -194,7 +200,7 @@ export class I18n<
         }
 
         // Fallback locale:
-        const pattern = this.#getPattern(fallbackBundle, key);
+        const pattern = findPattern(fallbackBundle, key);
 
         if (pattern == null) {
             const isAttr = key.attr !== undefined;
@@ -206,41 +212,24 @@ export class I18n<
             );
         }
 
-        return this.#formatPattern(fallbackBundle, pattern, variables);
-    }
-
-    #getPattern(
-        bundle: FluentBundle,
-        key: MessageKey,
-    ): FluentPattern | null | undefined {
-        const message = bundle.getMessage(key.id);
-        return key.attr === undefined
-            ? message?.value
-            : message?.attributes[key.attr];
-    }
-
-    #formatPattern<K extends string>(
-        bundle: FluentBundle,
-        pattern: FluentPattern,
-        variables?: TranslationVariables<K>,
-    ): string {
-        const errors: Error[] = [];
-        const formatted = bundle.formatPattern(
-            pattern,
-            variables,
-            errors,
-        );
-        for (const error of errors) {
-            console.error(error);
-        }
-        return formatted;
+        return formatPattern(fallbackBundle, pattern, variables[0]);
     }
 
     middleware(): MiddlewareFn<C & I18nFlavor> {
+        const translateFunction: (
+            messageKey: StringWithSuggestions<KeyOf<T>>,
+            variables?:
+                | TranslationVariables<
+                    T[StringWithSuggestions<KeyOf<T>>][number]
+                >
+                | undefined,
+        ) => string = this.translate.bind(this, "en");
         return async function (ctx, next): Promise<void> {
             Object.defineProperty(ctx, "i18n", {
                 writable: true,
-                value: {},
+                value: {
+                    translate: translateFunction,
+                } satisfies I18nFlavor,
             });
 
             await next();
@@ -248,63 +237,31 @@ export class I18n<
     }
 }
 
-/**
- * Load locales from a specified directory.
- */
-export async function loadLocalesDirectory<
-    C extends Context = Context,
->(
-    i18n: I18n<C>,
-    path: string,
-    options?: {
-        walkOptions?: WalkOptions;
-        resourceOptions?: ResourceOptions;
-    },
-): Promise<void> {
-    // TODO: glob pattern support
-    const cwd = join(Deno.cwd(), path);
-    const walker = walk(path, {
-        followSymlinks: true,
-        ...(options?.walkOptions ?? {}), // overwrite
-        includeDirs: false,
-        includeFiles: true,
-        exts: [".ftl"],
-    });
-
-    // for await (const localeDir of Deno.readDir(cwd)) {
-    //     if (!localeDir.isDirectory) continue;
-    //     const path = resolve(cwd, entry.name);
-    // }
-
-    for await (const entry of walker) {
-        const resolved = resolve(entry.path);
-        const path = relative(cwd, resolved);
-        const [locale] = path.split(SEPARATOR);
-        const content = await Deno.readTextFile(entry.path);
-        const errors = i18n.loadResource(
-            locale,
-            content,
-            options?.resourceOptions,
-        );
-        console.log(locale, resolved);
-        for (const error of errors) {
-            console.error(
-                `%cerror:%c ${error.message}\n    at ${resolved}`,
-                "color: red",
-                "color: none",
-            );
-        }
-    }
-
-    return;
+function findPattern(
+    bundle: FluentBundle,
+    key: MessageKey,
+): FluentPattern | null | undefined {
+    const message = bundle.getMessage(key.id);
+    return key.attr === undefined
+        ? message?.value
+        : message?.attributes[key.attr];
 }
 
-const i18n = new I18n({ fallbackLocale: "en" });
-await loadLocalesDirectory(i18n, "locales");
-
-interface MessageKey {
-    id: string;
-    attr?: string;
+function formatPattern<K extends string>(
+    bundle: FluentBundle,
+    pattern: FluentPattern,
+    variables?: TranslationVariables<K>,
+): string {
+    const errors: Error[] = [];
+    const formatted = bundle.formatPattern(
+        pattern,
+        variables,
+        errors,
+    );
+    for (const error of errors) {
+        console.error(error);
+    }
+    return formatted;
 }
 
 function parseMessageKey(key: string): MessageKey {

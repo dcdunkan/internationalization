@@ -3,11 +3,11 @@ import {
     parse,
     type PatternElement,
 } from "npm:@fluent/syntax@0.19.0";
-import { extname } from "jsr:@std/path/extname";
-import { resolve } from "jsr:@std/path/resolve";
-import { exists } from "jsr:@std/fs/exists";
-import { yellow } from "jsr:@std/fmt/colors";
-import { parseArgs } from "jsr:@std/cli/parse-args";
+import { extname } from "jsr:@std/path@1/extname";
+import { resolve } from "jsr:@std/path@1/resolve";
+import { exists } from "jsr:@std/fs@1/exists";
+import { yellow } from "jsr:@std/fmt@1/colors";
+import { parseArgs } from "jsr:@std/cli@1/parse-args";
 import { getLogger } from "./common.ts";
 
 const { _: _pathArgs, ...args } = parseArgs(Deno.args, {

@@ -9,4 +9,4 @@ export type GeneratedMessageTypes = {
     "coo.k": readonly [];
     "maker": readonly [];
     "pop": readonly [];
-};
+}
