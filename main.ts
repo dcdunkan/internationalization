@@ -52,7 +52,7 @@ const instance2 = new I18n<
 });
 console.log(instance2.translate("en", "message", { t: 1 }));
 instance2.translate("en", "maker", { k: "" });
-instance2.translate("en", "mak", undefined);
+instance2.translate("en", "mak");
 
 new Bot<Context & I18nFlavor>("").use(instance);
 new Bot<Context & I18nFlavor>("").use(instance2);

@@ -59,7 +59,7 @@ const DEFAULT_ALLOW_OVERRIDES = false;
  * ```
  */
 export class I18n<
-    C extends Context = Context,
+    C extends Context = Context & I18nFlavor,
     T extends MessageTypings = MessageTypings,
 > {
     // While FluentBundle-s are capable of being the carrier of more than one
@@ -145,15 +145,13 @@ export class I18n<
         return Array.from(itr);
     }
 
-    translate<K extends KeyOf<T>>(
+    // Should `translate` be really strict? When message types are applied?
+    // Tried, but couldn't make it actually undefined (without explicitly specifying
+    // `undefined`) when type's are removed. See the previous commit.
+    translate<K extends StringWithSuggestions<KeyOf<T>>>(
         locale: string, // NOTE: this value is supposed to be returned by the locale negotiator
         messageKey: K,
-        ...variables: string extends K // no typings installed / generic types
-            ? [TranslationVariables?]
-            : T[K] extends readonly string[] // its a valid key
-                ? T[K][number] extends never ? [] // and there are variables for the key
-                : [TranslationVariables<T[K][number]>]
-            : []
+        variables?: TranslationVariables<T[K][number]>,
     ): string {
         const fallbackLocale = this.options.fallbackLocale;
         const fallbackBundle = this.#bundles.get(fallbackLocale);
@@ -191,7 +189,7 @@ export class I18n<
             const bundle = this.#bundles.get(negotiatedLocale)!;
             const pattern = findPattern(bundle, key);
             if (pattern != null) {
-                return formatPattern(bundle, pattern, variables[0]);
+                return formatPattern(bundle, pattern, variables);
             } else {
                 console.error(
                     `No message '${messageKey}' found in locale '${negotiatedLocale}'.`,
@@ -212,25 +210,19 @@ export class I18n<
             );
         }
 
-        return formatPattern(fallbackBundle, pattern, variables[0]);
+        return formatPattern(fallbackBundle, pattern, variables);
     }
 
     middleware(): MiddlewareFn<C & I18nFlavor> {
-        const translateFunction: (
-            messageKey: StringWithSuggestions<KeyOf<T>>,
-            variables?:
-                | TranslationVariables<
-                    T[StringWithSuggestions<KeyOf<T>>][number]
-                >
-                | undefined,
-        ) => string = this.translate.bind(this, "en");
+        const translateFunction: TranslateFunction = this.translate.bind(this, "en");
         return async function (ctx, next): Promise<void> {
-            Object.defineProperty(ctx, "i18n", {
-                writable: true,
-                value: {
-                    translate: translateFunction,
-                } satisfies I18nFlavor,
-            });
+            ctx.translate = translateFunction;
+            // Object.defineProperty(ctx, "i18n", {
+            //     writable: true,
+            //     value: {
+            //         translate: translateFunction,
+            //     } satisfies I18nFlavor,
+            // });
 
             await next();
         };
