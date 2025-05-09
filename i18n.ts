@@ -3,15 +3,17 @@ import {
     FluentResource,
     type FluentVariable,
     type Message,
-} from "npm:@fluent/bundle@0.18.0";
+} from "npm:@fluent/bundle@0.19.1";
 import { negotiateLanguages } from "npm:@fluent/langneg@0.7.0";
 import {
     type Context,
     type MiddlewareFn,
-} from "https://deno.land/x/grammy@v1.31.3/mod.ts";
+} from "https://lib.deno.dev/x/grammy@1.x/mod.ts";
+import { createDebug } from "jsr:@grammyjs/debug@0.2.1";
+
+const debug = createDebug("grammy:i18n");
 
 type KeyOf<T> = string & keyof T;
-type MaybePromise<T> = Promise<T> | T;
 type StringWithSuggestions<S extends string> =
     | string & Record<never, never>
     | S;
@@ -27,9 +29,11 @@ export type MessageTypings<
 > = {
     readonly [key in K]: Readonly<V[]>;
 };
+
+export type NegotiatorResult = string | undefined;
 export type LocaleNegotiator<C extends Context> = (
     ctx: C,
-) => MaybePromise<unknown>;
+) => NegotiatorResult | Promise<NegotiatorResult>;
 export interface ResourceOptions {
     allowOverrides?: boolean;
     bundleOptions?: Partial<FluentBundleOptions>;
@@ -39,77 +43,73 @@ export interface MessageKey {
     attr?: string;
 }
 
-export interface I18nFlavor {
-    // locale: string;
-    translate: TranslateFunction;
-}
-export type TranslateFunction = <K extends string>(
-    key: string,
-    variables: TranslationVariables<K>,
+export type TranslateFunction<
+    T extends MessageTypings = MessageTypings,
+> = <K extends KeyOf<T>>(
+    messageKey: StringWithSuggestions<K>,
+    ...args: T[K]["length"] extends 0 ? []
+        : [variables: TranslationVariables<T[K][number]>]
 ) => string;
 
-const DEFAULT_FALLBACK_LOCALE = "en" as const;
+export interface I18nFlavor<T extends MessageTypings = MessageTypings> {
+    i18n: {
+        useLocale: (locale: string) => void;
+        negotiateLocale: () => Promise<NegotiatorResult>;
+    };
+    translate: TranslateFunction<T>;
+}
+
 const DEFAULT_ALLOW_OVERRIDES = false;
 
-/**
- * This class makes it possible to easily include and use different languages
- * for different users of your bot.
- * ```ts
- * const instance = new I18n({ fallbackLocale: "en" });
- * ```
- */
 export class I18n<
-    C extends Context = Context & I18nFlavor,
     T extends MessageTypings = MessageTypings,
+    C extends Context = Context & I18nFlavor<T>,
 > {
     // While FluentBundle-s are capable of being the carrier of more than one
-    // language at a time, here each bundle can carry only one language.
+    // locales at a time, here each bundle can carry only one locale.
     #bundles: Map<string, FluentBundle>;
 
     constructor(
         private options: {
             /**
-             * Fallback (default) locale of the instance. This must be set in order
-             * to prevent panicking if the requested locale has no message of that key.
-             * An error will be thrown in case there was no bundle registered for this
-             * fallback locale.
+             * Fallback (default) locale of the instance. This must be set in
+             * order to prevent panicking if the requested locale has no message
+             * of that key. An error will be thrown in case there was no bundle
+             * registered for this fallback locale.
              */
-            fallbackLocale: StringWithSuggestions<
-                typeof DEFAULT_FALLBACK_LOCALE
-            >;
+            fallbackLocale: string;
             /**
-             * Custom locale negotiator for utilising external sources or databases for
-             * choosing the best possible locale for the user.
+             * Custom locale negotiator for utilising external sources or
+             * databases for choosing the best possible locale for the user.
              *
-             * Default locale negotiator reads the `language_code` of the user from the
-             * incoming update. If the `language_code` couldn't be accessed, then returns
-             * the configured `fallbackLocale` of the instance.
+             * The default locale negotiator reads the `language_code` of the
+             * user from the incoming update. This default behavior can be
+             * overriden by defining a custom locale negotiator.
+             *
+             * If the locale negotiator does not return a string, the set
+             * fallback locale is used instead.
              */
             localeNegotiator?: LocaleNegotiator<C>;
             /**
-             * Bundle options to be used when creating a Fluent bundle. This configuration
-             * is added to every bundle (each bundle is for each registered locale). This can
-             * be overridden by passing a different set of bundle options when loading a
-             * resource.
+             * Bundle options to be used when creating a Fluent bundle. This
+             * configuration is added to every bundle (each bundle is for each
+             * registered locale). This can be overridden by passing a different
+             * set of bundle options when loading a resource.
              *
-             * One of the common usage of this option would be to load bundles with
-             * `useIsolating` set to false by default, to globally disable the Unicode
-             * Isolation done by Fluent, or to install custom Fluent functions.
+             * One of the common usage of this option would be to load bundles
+             * with `useIsolating` set to false by default, to globally disable
+             * the Unicode Isolation done by Fluent, or to install custom Fluent
+             * functions.
              */
             bundleOptions?: FluentBundleOptions;
         },
     ) {
         if (!isValidLocale(options.fallbackLocale)) {
-            throw new Error(
-                "Must set a valid fallback (default) locale.",
-            );
+            throw new Error("Must set a valid fallback (default) locale.");
         }
 
         this.#bundles = new Map<string, FluentBundle>();
-        this.options.localeNegotiator ??= function (ctx) {
-            return ctx.from?.language_code ??
-                options.fallbackLocale;
-        };
+        this.options.localeNegotiator ??= (ctx) => ctx.from?.language_code;
     }
 
     loadResource(
@@ -121,14 +121,15 @@ export class I18n<
             throw new Error(`The locale ${locale} seems invalid.`);
         }
 
-        // lookup the bundle with the locale, or create a new one.
-        const bundle = this.#bundles.has(locale)
-            ? this.#bundles.get(locale)
-            : new FluentBundle(locale, {
+        let bundle: FluentBundle | undefined = this.#bundles.get(locale);
+        if (bundle == null || !(bundle instanceof FluentBundle)) {
+            bundle = new FluentBundle(locale, { // TODO: should allow multiple locales per bundle? Seems useless in this case
                 ...this.options.bundleOptions,
                 ...options?.bundleOptions,
             });
-        assert(bundle !== undefined);
+            debug(`Creating a bundle for the locale '${locale}'`);
+            this.#bundles.set(locale, bundle);
+        }
 
         const resource = new FluentResource(source);
         const errors = bundle.addResource(resource, {
@@ -136,100 +137,135 @@ export class I18n<
                 DEFAULT_ALLOW_OVERRIDES,
         });
 
-        this.#bundles.set(locale, bundle);
         return errors;
     }
 
     getLocales(): string[] {
-        const itr = this.#bundles.keys();
-        return Array.from(itr);
+        const locales: string[] = [];
+        for (const bundle of this.#bundles.values()) {
+            locales.push(...bundle.locales);
+        }
+        return locales;
     }
 
-    // Should `translate` be really strict? When message types are applied?
-    // Tried, but couldn't make it actually undefined (without explicitly specifying
-    // `undefined`) when type's are removed. See the previous commit.
-    translate<K extends StringWithSuggestions<KeyOf<T>>>(
-        locale: string, // NOTE: this value is supposed to be returned by the locale negotiator
-        messageKey: K,
-        variables?: TranslationVariables<T[K][number]>,
+    translate<K extends KeyOf<T>>(
+        locale: string, // this value is supposed to be returned by the locale negotiator
+        messageKey: StringWithSuggestions<K>,
+        ...args: T[K]["length"] extends 0 ? []
+            : [variables: TranslationVariables<T[K][number]>]
     ): string {
-        const fallbackLocale = this.options.fallbackLocale;
-        const fallbackBundle = this.#bundles.get(fallbackLocale);
+        debug(`Translating message '${messageKey}' in locale '${locale}'`);
+        const variables = args[0];
 
-        if (this.#bundles.size === 0) {
+        if (this.#bundles.size == 0) {
             throw new Error(
                 "There are no locales available for translating the message",
             );
         }
-        if (
-            typeof fallbackBundle === "undefined" ||
-            !(fallbackBundle instanceof FluentBundle)
-        ) {
-            throw new Error(
-                `Fallback locale '${fallbackLocale}' has no translation resources.`,
-            );
-        }
 
         const key = parseMessageKey(messageKey);
-
-        // Negotiated locale could be either the best possible match for the
-        // requested locale or the fallback locale set by the user.
-        const [negotiatedLocale] = negotiateLanguages(
+        const negotiatedLocales = negotiateLanguages(
             [locale],
             this.getLocales(),
-            {
-                strategy: "lookup", // "lookup" strategy only returns one locale.
-                defaultLocale: fallbackLocale,
-            },
+            { strategy: "filtering" },
         );
-
-        // If the requested locale negotiated into a matching locale other than
-        // the set fallback locale.
-        if (negotiatedLocale !== fallbackLocale) {
-            const bundle = this.#bundles.get(negotiatedLocale)!;
-            const pattern = findPattern(bundle, key);
-            if (pattern != null) {
-                return formatPattern(bundle, pattern, variables);
-            } else {
-                console.error(
-                    `No message '${messageKey}' found in locale '${negotiatedLocale}'.`,
-                );
-            }
+        for (const negotiatedLocale of negotiatedLocales) {
+            const bundle = this.#bundles.get(negotiatedLocale);
+            if (bundle == null) continue; // TODO: throw or log?
+            const pattern = getPattern(bundle, key);
+            if (pattern == null) continue;
+            debug(
+                `Translating using '${negotiatedLocale}' (from '${locale}')`,
+            );
+            return formatPattern(bundle, pattern, variables);
         }
 
-        // Fallback locale:
-        const pattern = findPattern(fallbackBundle, key);
-
-        if (pattern == null) {
-            const isAttr = key.attr !== undefined;
+        // falls back
+        debug(`Falling back to '${this.options.fallbackLocale}'`);
+        const bundle = this.#bundles.get(this.options.fallbackLocale);
+        if (bundle == null) {
             throw new Error(
-                `Couldn't find the ` +
-                    (isAttr ? `attribute '${key.attr}' in the ` : "") +
-                    `message '${key.id}' in the fallback locale '${fallbackLocale}'. ` +
-                    `Fallback locale must have all the messages you reference.`,
+                "There are no resources available for the fallbackLocale: " +
+                    this.options.fallbackLocale,
             );
         }
+        const pattern = getPattern(bundle, key);
+        if (pattern != null) {
+            return formatPattern(bundle, pattern, variables);
+        }
 
-        return formatPattern(fallbackBundle, pattern, variables);
+        // TODO: decide whether `translate` should throw or return `messageKey` as string.
+        throw new Error(
+            `Couldn't find the ` +
+                (key.attr != null ? `attribute '${key.attr}' in the ` : "") +
+                `message '${key.id}' in the fallback locale '${this.options.fallbackLocale}'. ` +
+                `At least the fallback locale must have all the messages you reference.`,
+        );
     }
 
-    middleware(): MiddlewareFn<C & I18nFlavor> {
-        const translateFunction: TranslateFunction = this.translate.bind(this, "en");
-        return async function (ctx, next): Promise<void> {
-            ctx.translate = translateFunction;
-            // Object.defineProperty(ctx, "i18n", {
-            //     writable: true,
-            //     value: {
-            //         translate: translateFunction,
-            //     } satisfies I18nFlavor,
-            // });
+    middleware(): MiddlewareFn<C & I18nFlavor<T>> {
+        const {
+            fallbackLocale,
+            localeNegotiator,
+        } = this.options;
+        const withLocale = (locale: string) =>
+            this.translate.bind(this, locale) as TranslateFunction<T>;
 
+        return async function (ctx, next): Promise<void> {
+            let translate: TranslateFunction<T>;
+
+            function useLocale(locale: string) {
+                if (!isValidLocale(locale)) {
+                    throw new Error(
+                        "Cannot use an invalid locale for translations.",
+                    );
+                }
+                debug(`Using locale '${locale}' for translating`);
+                translate = withLocale(locale);
+            }
+            async function negotiateLocale() {
+                const negotiated = await localeNegotiator?.(ctx);
+                debug(
+                    negotiated == null
+                        ? `Could not negotiate a valid language. Falling back to '${fallbackLocale}'`
+                        : `Negotiated locale: '${negotiated}'`,
+                );
+                useLocale(negotiated ?? fallbackLocale);
+                return negotiated;
+            }
+
+            Object.defineProperty(ctx, "i18n", {
+                writable: true,
+                value: {
+                    useLocale: useLocale,
+                    negotiateLocale: negotiateLocale,
+                } satisfies I18nFlavor<T>["i18n"],
+            });
+
+            ctx.translate = function <K extends KeyOf<T>>(
+                messageKey: StringWithSuggestions<K>,
+                ...args: T[K]["length"] extends 0 ? []
+                    : [variables: TranslationVariables<T[K][number]>]
+            ): string {
+                const variables = args[0];
+                const merged = {
+                    ...variables,
+                    // todo: global variables
+                } satisfies TranslationVariables;
+                return translate(
+                    messageKey,
+                    ...[merged] as T[K]["length"] extends 0 ? []
+                        : [TranslationVariables<T[K][number]>],
+                );
+            };
+
+            await negotiateLocale(); // initial negotiation
             await next();
         };
     }
 }
 
-function findPattern(
+function getPattern(
     bundle: FluentBundle,
     key: MessageKey,
 ): FluentPattern | null | undefined {
@@ -245,11 +281,7 @@ function formatPattern<K extends string>(
     variables?: TranslationVariables<K>,
 ): string {
     const errors: Error[] = [];
-    const formatted = bundle.formatPattern(
-        pattern,
-        variables,
-        errors,
-    );
+    const formatted = bundle.formatPattern(pattern, variables, errors);
     for (const error of errors) {
         console.error(error);
     }
@@ -262,19 +294,19 @@ function parseMessageKey(key: string): MessageKey {
         segments.length > 2 ||
         segments.some((s) => s.trim().length === 0)
     ) {
-        throw new Error("Invalid message key segments");
+        throw new Error(`Invalid message key segments in key: '${key}'`);
     }
     return { id: segments[0], attr: segments[1] };
 }
 
-function assert(expression: unknown, msg?: string): asserts expression {
-    if (!expression) {
-        throw new Error(msg ?? "Expression isn't truthy");
-    }
-}
-
-// TODO: Implement a IETF tag validator
+/**
+ * A basic IETF tag validator. Doesn't bother about lengths of the subtags, yet.
+ *
+ * @see https://en.wikipedia.org/wiki/IETF_language_tag#Syntax_of_language_tags
+ */
 function isValidLocale(locale: string): boolean {
     if (typeof locale !== "string") return false;
-    return !(/[^a-zA-Z0-9\-]/.test(locale));
+    return locale.split("-")
+        .map((subtag) => subtag.trim())
+        .every((subtag) => subtag.length > 0 && !/[^a-zA-Z0-9]/.test(subtag));
 }

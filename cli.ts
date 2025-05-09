@@ -3,12 +3,11 @@ import {
     parse,
     type PatternElement,
 } from "npm:@fluent/syntax@0.19.0";
-import { extname } from "jsr:@std/path@1/extname";
-import { resolve } from "jsr:@std/path@1/resolve";
-import { exists } from "jsr:@std/fs@1/exists";
-import { yellow } from "jsr:@std/fmt@1/colors";
-import { parseArgs } from "jsr:@std/cli@1/parse-args";
-import { getLogger } from "./common.ts";
+import { extname } from "jsr:@std/path@^1/extname";
+import { resolve } from "jsr:@std/path@^1/resolve";
+import { exists } from "jsr:@std/fs@^1/exists";
+import { bold, dim, red, yellow } from "jsr:@std/fmt@^1/colors";
+import { parseArgs } from "jsr:@std/cli@^1/parse-args";
 
 const { _: _pathArgs, ...args } = parseArgs(Deno.args, {
     boolean: ["watch", "quiet"],
@@ -255,4 +254,13 @@ async function resolveArgument(
         console.error(`'${args}' is not a file, directory, or symlink.`);
         Deno.exit(1);
     }
+}
+
+function getLogger(quiet?: boolean) {
+    return {
+        info: (...data: unknown[]) =>
+            !quiet && console.info(dim(new Date().toISOString()), ...data),
+        error: (...data: unknown[]) =>
+            console.error(red(bold("error:")), ...data),
+    };
 }
