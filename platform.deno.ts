@@ -1,4 +1,3 @@
-import { type Context } from "https://deno.land/x/grammy@v1.31.3/mod.ts";
 import { type I18n, type ResourceOptions } from "./i18n.ts";
 import { walk, type WalkOptions } from "jsr:@std/fs@1/walk";
 import { SEPARATOR } from "jsr:@std/path@1/constants";
@@ -8,10 +7,8 @@ import { resolve } from "jsr:@std/path@^1/resolve";
 /**
  * Load locales from a specified directory.
  */
-export async function loadLocalesDirectory<
-    C extends Context = Context,
->(
-    i18n: I18n<C>,
+export async function loadLocalesDirectory(
+    i18n: I18n,
     path: string,
     options?: {
         walkOptions?: WalkOptions;
