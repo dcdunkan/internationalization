@@ -1,37 +1,29 @@
 import { I18n, I18nFlavor } from "./i18n.ts";
-import { Bot, Context } from "https://deno.land/x/grammy@v1.36.0/mod.ts";
+import { Bot, Context } from "https://deno.land/x/grammy@v1.36.1/mod.ts";
 import { GeneratedMessageTypes } from "./locales/types.d.ts";
-import { UserFromGetMe } from "https://deno.land/x/grammy@v1.36.0/types.ts";
+import { UserFromGetMe } from "https://deno.land/x/grammy@v1.36.1/types.ts";
 
 type MyContext = Context & I18nFlavor<GeneratedMessageTypes>;
 
-const instance = new I18n<GeneratedMessageTypes>({
+const adapter = new FluentAdapter<GeneratedMessageTypes>({
     fallbackLocale: "en",
-    globalVariables: () => {
-        return {
-            lastChecked: "1",
-        };
-    },
 });
-
-const bot = new Bot<MyContext>("token");
-
-bot.catch((err) => {
-    console.error(err);
-});
-bot.use(instance);
-
-instance.loadResource(
+adapter.loadResource(
     "en",
     `coo = ABCD {$lastChecked}
     .k = bruh`,
 );
-instance.translate("de", "coo", {});
-instance.translate("de", "coo", { lastChecked: 1 });
+console.log(adapter.translate("de", "coo", {}));
+console.log(adapter.translate("de", "coo", { lastChecked: 1 }));
+
+const instance = new I18n<MyContext, GeneratedMessageTypes>(adapter);
+const bot = new Bot<MyContext>("token");
+
+bot.catch((err) => console.error(err));
+bot.use(instance);
 
 bot.on("msg", (ctx) => {
     console.log("Entering message handler");
-    console.log(ctx.i18n.currentLocale);
     console.log(ctx.translate("coo"));
     console.log(ctx.translate("coo", { lastChecked: 1 }));
     console.log(ctx.translate("coo.k"));
@@ -75,7 +67,7 @@ type StringDifferenceResult = StringDifference<
     string
 >;
 
-import { Context } from "https://deno.land/x/grammy@v1.36.0/mod.ts";
+import { FluentAdapter } from "./adapter_fluent.ts";
 
 type NegotiatorResult = string | undefined;
 

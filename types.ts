@@ -1,45 +1,73 @@
-import { Context } from "https://deno.land/x/grammy@v1.36.0/mod.ts";
+import { Context } from "https://lib.deno.dev/x/grammy@1.x/mod.ts";
 
-type NegotiatorResult = string | undefined;
+export type KeyOf<T> = string & keyof T;
+export type StringWithSuggestions<S extends string> =
+    | string & Record<never, never>
+    | S;
 
-type Negotiator<C extends Context> =
-    | ((ctx: C) => NegotiatorResult)
-    | ((ctx: C) => Promise<NegotiatorResult>);
+export type NegotiatorResult = string | undefined;
+export type LocaleNegotiator<C extends Context> = (
+    ctx: C,
+) => NegotiatorResult | Promise<NegotiatorResult>;
 
-const asyncNeg: Negotiator<Context> = () => {
-    return Promise.resolve("en");
+// VERSION 1
+type TranslationVariableValue = string | number | Date;
+
+export type TranslationVariables<K extends string = string> = {
+    [key in K]: TranslationVariableValue;
 };
-
-const syncNeg: Negotiator<Context> = () => {
-    return "en";
+export type MessageTypings<
+    K extends string = string,
+    V extends string = string,
+> = {
+    readonly [key in K]: Readonly<V[]>;
 };
-
-type FnType<C extends Context, N extends Negotiator<C>> = ReturnType<N> extends
-    Promise<NegotiatorResult> ? Promise<void>
-    : ReturnType<N> extends NegotiatorResult ? void
-    : never;
-
-type A = FnType<Context, typeof asyncNeg>;
-//   ^?
-type B = FnType<Context, typeof syncNeg>;
-//   ^?
-
-type TranslateMessages = {
-    msg1: { var1: string };
-    msg2: { var1: string; var2: string };
-    msg3: never; // or {} if you prefer
-};
-
-type TranslateFunctionX = <K extends keyof TranslateMessages>(
-    key: K,
-    ...args: TranslateMessages[K] extends never ? []
-        : [variables: TranslateMessages[K]]
+export type TranslateFunction<
+    T extends MessageTypings = MessageTypings,
+> = <K extends KeyOf<T>>(
+    messageKey: StringWithSuggestions<K>,
+    ...args: T[K]["length"] extends 0 ? []
+        : [variables: TranslationVariables<T[K][number]>]
 ) => string;
 
-let translate: TranslateFunctionX = (key: string, ...args: []) {}
+// VERSION 2
+type VariableValue = string | number | Date;
 
-// Now you'll get proper autocompletion:
-translate("msg1", { var1: "test" }); // OK
-translate("msg2", { var1: "a", var2: "b" }); // OK
-translate("msg3"); // OK
-translate("");
+type Variables<V extends string = string> = {
+    readonly [variable in V]: VariableValue;
+};
+
+type Locales<
+    L extends string = string,
+    M extends string = string,
+    V extends string = string,
+> = {
+    locales: L;
+    messages: {
+        readonly [locale in L]: {
+            readonly [message in M]: {
+                readonly [variable in V]: VariableValue;
+            };
+        };
+    };
+};
+
+type GLocales = {
+    locales: "en" | "de";
+    messages: {
+        readonly "en": {
+            readonly "message": {
+                readonly first: VariableValue;
+                readonly second: VariableValue;
+            };
+            readonly "message.one": {
+                readonly second: VariableValue;
+            };
+        };
+    };
+};
+
+function f<B extends Locales>(v: keyof B) {
+}
+
+f<GLocales>("locales");
