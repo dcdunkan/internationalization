@@ -7,12 +7,7 @@ import {
 import { negotiateLanguages } from "npm:@fluent/langneg@0.7.0";
 import { FormatAdapter } from "./i18n.ts";
 import { isValidLocale } from "./utilities.ts";
-import type {
-    KeyOf,
-    MessageTypings,
-    StringWithSuggestions,
-    TranslationVariables,
-} from "./types.ts";
+import type { Locales, LocalesTypings, MessageKey, Messages } from "./types.ts";
 
 import { walk, type WalkOptions } from "jsr:@std/fs@1/walk";
 import { SEPARATOR } from "jsr:@std/path@1/constants";
@@ -27,15 +22,15 @@ export interface ResourceOptions {
     allowOverrides?: boolean;
     bundleOptions?: Partial<FluentBundleOptions>;
 }
-export interface MessageKey {
+export interface Key {
     id: string;
     attr?: string;
 }
 
 const DEFAULT_ALLOW_OVERRIDES = false;
 
-export class FluentAdapter<MT extends MessageTypings = MessageTypings>
-    implements FormatAdapter<MT> {
+export class FluentAdapter<LT extends LocalesTypings = LocalesTypings>
+    implements FormatAdapter<LT> {
     // While FluentBundle-s are capable of being the carrier of more than one
     // locales at a time, here each bundle can carry only one locale.
     #bundles: Map<string, FluentBundle>;
@@ -86,7 +81,8 @@ export class FluentAdapter<MT extends MessageTypings = MessageTypings>
 
         let bundle: FluentBundle | undefined = this.#bundles.get(locale);
         if (bundle == null || !(bundle instanceof FluentBundle)) {
-            bundle = new FluentBundle(locale, { // TODO: should allow multiple locales per bundle? Seems useless in this case
+            // todo: should allow multiple locales per bundle? Seems useless in this case
+            bundle = new FluentBundle(locale, {
                 ...this.options.bundleOptions,
                 ...options?.bundleOptions,
             });
@@ -111,11 +107,17 @@ export class FluentAdapter<MT extends MessageTypings = MessageTypings>
         return locales;
     }
 
-    translate<K extends KeyOf<MT>>(
-        locale: string,
-        messageKey: StringWithSuggestions<K>,
-        ...args: MT[K]["length"] extends 0 ? []
-            : [variables: TranslationVariables<MT[K][number]>]
+    translate<
+        L extends Locales<LT>,
+        M extends Messages<LT>,
+        MK extends MessageKey<LT, M>,
+    >(
+        locale: L,
+        messageKey: MK,
+        ...args: M[MK] extends never ? []
+            : { readonly [variable: string]: unknown } extends M[MK]
+                ? [variables?: M[MK]]
+            : [variables: M[MK]]
     ): string {
         debug(`Translating message '${messageKey}' in locale '${locale}'`);
         const variables = args[0];
@@ -134,7 +136,7 @@ export class FluentAdapter<MT extends MessageTypings = MessageTypings>
         );
         for (const negotiatedLocale of negotiatedLocales) {
             const bundle = this.#bundles.get(negotiatedLocale);
-            if (bundle == null) continue; // TODO: throw or log?
+            if (bundle == null) continue; // todo: throw or log?
             const pattern = getPattern(bundle, key);
             if (pattern == null) continue;
             debug(
@@ -157,7 +159,7 @@ export class FluentAdapter<MT extends MessageTypings = MessageTypings>
             return formatPattern(bundle, pattern, variables);
         }
 
-        // TODO: decide whether `translate` should throw or return `messageKey` as string.
+        // todo: decide whether `translate` should throw or return `messageKey` as string.
         throw new Error(
             `Couldn't find the ` +
                 (key.attr != null ? `attribute '${key.attr}' in the ` : "") +
@@ -169,7 +171,7 @@ export class FluentAdapter<MT extends MessageTypings = MessageTypings>
 
 function getPattern(
     bundle: FluentBundle,
-    key: MessageKey,
+    key: Key,
 ): FluentPattern | null | undefined {
     const message = bundle.getMessage(key.id);
     return key.attr === undefined
@@ -177,10 +179,14 @@ function getPattern(
         : message?.attributes[key.attr];
 }
 
-function formatPattern<K extends string>(
+function formatPattern<
+    LT extends LocalesTypings,
+    M extends Messages<LT>,
+    MK extends MessageKey<LT, M>,
+>(
     bundle: FluentBundle,
     pattern: FluentPattern,
-    variables?: TranslationVariables<K>,
+    variables?: M[MK],
 ): string {
     const errors: Error[] = [];
     const formatted = bundle.formatPattern(pattern, variables, errors);
@@ -190,7 +196,7 @@ function formatPattern<K extends string>(
     return formatted;
 }
 
-function parseMessageKey(key: string): MessageKey {
+function parseMessageKey(key: string): Key {
     const segments = key.trim().split(".");
     if (
         segments.length > 2 ||
@@ -202,9 +208,9 @@ function parseMessageKey(key: string): MessageKey {
 }
 
 export async function loadLocalesDirectory<
-    MT extends MessageTypings = MessageTypings,
+    LT extends LocalesTypings = LocalesTypings,
 >(
-    adapter: FluentAdapter<MT>,
+    adapter: FluentAdapter<LT>,
     path: string,
     options?: {
         walkOptions?: WalkOptions;

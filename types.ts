@@ -10,64 +10,32 @@ export type LocaleNegotiator<C extends Context> = (
     ctx: C,
 ) => NegotiatorResult | Promise<NegotiatorResult>;
 
-// VERSION 1
-type TranslationVariableValue = string | number | Date;
-
-export type TranslationVariables<K extends string = string> = {
-    [key in K]: TranslationVariableValue;
-};
-export type MessageTypings<
-    K extends string = string,
-    V extends string = string,
-> = {
-    readonly [key in K]: Readonly<V[]>;
-};
-export type TranslateFunction<
-    T extends MessageTypings = MessageTypings,
-> = <K extends KeyOf<T>>(
-    messageKey: StringWithSuggestions<K>,
-    ...args: T[K]["length"] extends 0 ? []
-        : [variables: TranslationVariables<T[K][number]>]
-) => string;
-
-// VERSION 2
-type VariableValue = string | number | Date;
-
-type Variables<V extends string = string> = {
-    readonly [variable in V]: VariableValue;
-};
-
-type Locales<
+export type LocalesTypings<
     L extends string = string,
     M extends string = string,
     V extends string = string,
+    VV extends string | number | Date = string | number | Date, // todo: fix this
 > = {
     locales: L;
     messages: {
-        readonly [locale in L]: {
-            readonly [message in M]: {
-                readonly [variable in V]: VariableValue;
-            };
-        };
+        readonly [message in M]:
+            | { readonly [variable in V]: VV }
+            | never;
     };
 };
+export type Locales<LT extends LocalesTypings> = LT["locales"];
+export type Messages<LT extends LocalesTypings> = LT["messages"];
+export type MessageKey<
+    LT extends LocalesTypings,
+    M extends Messages<LT>,
+> = KeyOf<M>;
 
-type GLocales = {
-    locales: "en" | "de";
-    messages: {
-        readonly "en": {
-            readonly "message": {
-                readonly first: VariableValue;
-                readonly second: VariableValue;
-            };
-            readonly "message.one": {
-                readonly second: VariableValue;
-            };
-        };
-    };
-};
-
-function f<B extends Locales>(v: keyof B) {
-}
-
-f<GLocales>("locales");
+export type TranslateFunction<LT extends LocalesTypings> = <
+    MK extends MessageKey<LT, Messages<LT>>,
+>(
+    messageKey: MK,
+    ...args: Messages<LT>[MK] extends never ? []
+        : { readonly [variable: string]: unknown } extends Messages<LT>[MK]
+            ? [variables?: Messages<LT>[MK]]
+        : [variables: Messages<LT>[MK]]
+) => string;

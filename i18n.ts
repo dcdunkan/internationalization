@@ -4,26 +4,23 @@ import {
 } from "https://lib.deno.dev/x/grammy@1.x/mod.ts";
 import { createDebug } from "jsr:@grammyjs/debug@0.2.1";
 import type {
-    KeyOf,
     LocaleNegotiator,
-    MessageTypings,
+    Locales,
+    LocalesTypings,
+    MessageKey,
+    Messages,
     NegotiatorResult,
-    StringWithSuggestions,
     TranslateFunction,
-    TranslationVariables,
 } from "./types.ts";
 import { isValidLocale } from "./utilities.ts";
 
 const debug = createDebug("grammy:i18n");
 
 export interface FormatAdapter<
-    MT extends MessageTypings = MessageTypings,
+    LT extends LocalesTypings = LocalesTypings,
 > {
     /**
-     * Fallback (default) locale of the instance. This must be set in
-     * order to prevent panicking if the requested locale has no message
-     * of that key. An error will be thrown in case there was no bundle
-     * registered for this fallback locale.
+     * Fallback (default) locale of the adapter.
      */
     fallbackLocale: string;
     /**
@@ -31,30 +28,35 @@ export interface FormatAdapter<
      */
     getLocales(): string[];
 
-    translate<K extends KeyOf<MT>>(
-        locale: string, // this value is supposed to be returned by the locale negotiator
-        messageKey: StringWithSuggestions<K>,
-        ...args: MT[K]["length"] extends 0 ? []
-            : [variables: TranslationVariables<MT[K][number]>]
+    translate<
+        L extends Locales<LT>,
+        MK extends MessageKey<LT, Messages<LT>>,
+    >(
+        locale: L,
+        messageKey: MK,
+        ...args: Messages<LT>[MK] extends never ? []
+            : { readonly [variable: string]: unknown } extends Messages<LT>[MK]
+                ? [variables?: Messages<LT>[MK]]
+            : [variables: Messages<LT>[MK]]
     ): string;
 }
 
-export interface I18nFlavor<MT extends MessageTypings = MessageTypings> {
+export interface I18nFlavor<LT extends LocalesTypings = LocalesTypings> {
     i18n: {
         useLocale: (locale: string) => void;
         negotiateLocale: () => Promise<NegotiatorResult>;
     };
-    translate: TranslateFunction<MT>;
+    translate: TranslateFunction<LT>;
 }
 
 export class I18n<
     C extends Context = Context,
-    MT extends MessageTypings = MessageTypings,
+    LT extends LocalesTypings = LocalesTypings,
 > {
     #localeNegotiator: LocaleNegotiator<C>;
 
     constructor(
-        private adapter: FormatAdapter<MT>,
+        private adapter: FormatAdapter<LT>,
         options?: {
             /**
              * Custom locale negotiator for utilising external sources or
@@ -62,10 +64,9 @@ export class I18n<
              *
              * The default locale negotiator reads the `language_code` of the
              * user from the incoming update. This default behavior can be
-             * overriden by defining a custom locale negotiator.
-             *
-             * If the locale negotiator does not return a string, the set
-             * fallback locale is used instead.
+             * overriden by defining a custom locale negotiator. If the locale
+             * negotiator does not return a string, the set fallback locale is
+             * used instead.
              */
             localeNegotiator?: LocaleNegotiator<C>;
         },
@@ -73,7 +74,6 @@ export class I18n<
         if (!isValidLocale(adapter.fallbackLocale)) {
             throw new Error("Must set a valid fallback (default) locale.");
         }
-
         this.#localeNegotiator = options?.localeNegotiator ??
             ((ctx) => ctx.from?.language_code);
     }
@@ -85,24 +85,30 @@ export class I18n<
         return this.adapter.getLocales();
     }
 
-    translate<K extends KeyOf<MT>>(
-        locale: string,
-        messageKey: StringWithSuggestions<K>,
-        ...args: MT[K]["length"] extends 0 ? []
-            : [variables: TranslationVariables<MT[K][number]>]
+    translate<
+        L extends Locales<LT>,
+        M extends Messages<LT>,
+        MK extends MessageKey<LT, M>,
+    >(
+        locale: L,
+        messageKey: MK,
+        ...args: Messages<LT>[MK] extends never ? []
+            : { readonly [variable: string]: unknown } extends Messages<LT>[MK]
+                ? [variables?: Messages<LT>[MK]]
+            : [variables: Messages<LT>[MK]]
     ): string {
         return this.adapter.translate(locale, messageKey, ...args);
     }
 
-    middleware(): MiddlewareFn<C & I18nFlavor<MT>> {
+    middleware(): MiddlewareFn<C & I18nFlavor<LT>> {
         const { fallbackLocale } = this.adapter;
         const localeNegotiator = this.#localeNegotiator;
 
         const withLocale = (locale: string) =>
-            this.translate.bind(this, locale) as TranslateFunction<MT>;
+            this.translate.bind(this, locale) as TranslateFunction<LT>;
 
         return async function (ctx, next): Promise<void> {
-            let translate: TranslateFunction<MT>;
+            let translate: TranslateFunction<LT>;
 
             function useLocale(locale: string) {
                 if (!isValidLocale(locale)) {
@@ -129,24 +135,19 @@ export class I18n<
                 value: {
                     useLocale: useLocale,
                     negotiateLocale: negotiateLocale,
-                } satisfies I18nFlavor<MT>["i18n"],
+                } satisfies I18nFlavor<LT>["i18n"],
             });
 
-            ctx.translate = function <K extends KeyOf<MT>>(
-                messageKey: StringWithSuggestions<K>,
-                ...args: MT[K]["length"] extends 0 ? []
-                    : [variables: TranslationVariables<MT[K][number]>]
+            ctx.translate = function <
+                MK extends MessageKey<LT, Messages<LT>>,
+            >(
+                messageKey: MK,
+                ...args: Messages<LT>[MK] extends never ? []
+                    : { readonly [variable: string]: unknown } extends
+                        Messages<LT>[MK] ? [variables?: Messages<LT>[MK]]
+                    : [variables: Messages<LT>[MK]]
             ): string {
-                const variables = args[0];
-                const merged = {
-                    ...variables,
-                    // todo: global variables
-                } satisfies TranslationVariables;
-                return translate(
-                    messageKey,
-                    ...[merged] as MT[K]["length"] extends 0 ? []
-                        : [TranslationVariables<MT[K][number]>],
-                );
+                return translate(messageKey, ...args);
             };
 
             await negotiateLocale(); // initial negotiation

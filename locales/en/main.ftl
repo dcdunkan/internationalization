@@ -1,6 +1,6 @@
-message = Message {$t}
+message = Message {$theme}
     .key = New Key
-    .key2 = New Key 2
+    .keyx = New Key 2
 
 create = Hi
 create = Hi 2
@@ -13,3 +13,5 @@ coo = d { DATETIME($lastChecked, day: "numeric", month: "long") }
 
 maker = k
 pop = this is a popper
+
+poppyx = poppp

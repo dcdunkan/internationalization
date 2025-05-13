@@ -1,6 +1,9 @@
 import { I18n, I18nFlavor } from "./i18n.ts";
 import { Bot, Context } from "https://deno.land/x/grammy@v1.36.1/mod.ts";
-import { GeneratedMessageTypes } from "./locales/types.d.ts";
+import {
+    GeneratedLocalesData,
+    GeneratedMessageTypes,
+} from "./locales/types.d.ts";
 import { UserFromGetMe } from "https://deno.land/x/grammy@v1.36.1/types.ts";
 
 type MyContext = Context & I18nFlavor<GeneratedMessageTypes>;
@@ -68,6 +71,7 @@ type StringDifferenceResult = StringDifference<
 >;
 
 import { FluentAdapter } from "./adapter_fluent.ts";
+import { KeyOf } from "./types.ts";
 
 type NegotiatorResult = string | undefined;
 
@@ -112,3 +116,110 @@ translate("msg1", { var1: "test" }); // OK
 translate("msg2", { var1: "a", var2: "b" }); // OK
 translate("msg3"); // OK
 translate("");
+
+type LocalesData<
+    L extends string = string,
+    M extends string = string,
+    V extends string = string,
+> = {
+    locales: L;
+    messages: {
+        readonly [message in M]:
+            | { readonly [variable in V]: unknown }
+            | never;
+    };
+};
+type Locales<LD extends LocalesData> = LD["locales"];
+type Messages<LD extends LocalesData> = LD["messages"];
+type MessageKey<LD extends LocalesData> = KeyOf<Messages<LD>>;
+type TFn<
+    LD extends LocalesData = LocalesData,
+> = <M extends Messages<LD>, MK extends MessageKey<LD>>(
+    messageKey: MK,
+    ...args: M[MK] extends never ? []
+        : [variables: M[MK]]
+) => string;
+
+type SampleMessages = {
+    locales: "en" | "de";
+    messages: {
+        readonly "vars": {
+            readonly first: string;
+        };
+        readonly "no-vars": never;
+    };
+};
+
+class I<LD extends LocalesData = LocalesData> {
+    constructor(o: {
+        fallbackLocale: Locales<LD>;
+    }) {
+        console.log(o);
+    }
+
+    translate<M extends Messages<LD>, MK extends MessageKey<LD>, XX = M[MK]>(
+        locale: Locales<LD>,
+        key: MK,
+        ...args: M[MK] extends never ? []
+            : { readonly [variable: string]: unknown } extends M[MK]
+                ? [variables?: M[MK]]
+            : [variables: M[MK]]
+    ) {
+        console.log(locale, key, args);
+    }
+}
+
+const i = new I<SampleMessages>({ fallbackLocale: "" });
+
+i.translate("ff", "no-vars");
+i.translate("de", "no-vars");
+i.translate("de", "no-vars", {});
+i.translate("de", "vars");
+i.translate("de", "vars", {});
+i.translate("de", "vars", {
+    first: "string",
+});
+
+const i2 = new I({ fallbackLocale: "" });
+
+i2.translate("ff", "no-vars");
+i2.translate("de", "no-vars");
+i2.translate("de", "no-vars", {});
+i2.translate("de", "vars");
+i2.translate("de", "vars", {});
+i2.translate("de", "vars", {
+    first: "string",
+});
+
+const fluentAdapter = new FluentAdapter({ fallbackLocale: "" });
+const i18n = new I18n(fluentAdapter);
+
+i18n.translate("ff", "ee", {});
+i18n.translate("ff", "ee", { dd: 1 });
+
+const adapter2 = new FluentAdapter<SampleMessages>({
+    fallbackLocale: "",
+});
+
+adapter2.translate("ff", "ee", {});
+adapter2.translate("ff", "ee", { dd: 1 });
+
+adapter2.translate("de", "no-vars");
+adapter2.translate("de", "no-vars", {});
+adapter2.translate("de", "no-vars", { dd: 1 });
+
+adapter2.translate("de", "vars1");
+adapter2.translate("de", "vars1", {});
+adapter2.translate("de", "vars1", { dd: 1 });
+adapter2.translate("de", "vars1", { first: "s" });
+
+adapter2.translate("de", "vars2");
+adapter2.translate("de", "vars2", {});
+adapter2.translate("de", "vars2", { one: "" });
+adapter2.translate("de", "vars2", { two: "" });
+adapter2.translate("de", "vars2", { one: " ", two: "" });
+
+const adapter3 = new FluentAdapter<GeneratedLocalesData>({
+    fallbackLocale: "en",
+});
+adapter3.translate("en", "message", { theme: 1 });
