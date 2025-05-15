@@ -2,24 +2,30 @@
 // Changes made to this file will be overwritten.
 
 type Value = string | number | Date;
-export type GeneratedLocalesData = {
-    locales: string;
-    messages: {
-        "message": {
-            "theme": Value;
-        };
-        "message.key": never;
-        "message.keyx": never;
-        "create": never;
-        "cooked.hype": {
-            "file2": Value;
-        };
-        "coo": {
-            "lastChecked": Value;
-        };
-        "coo.k": never;
-        "maker": never;
-        "pop": never;
-        "poppyx": never;
+
+type AvailableLocales = string;
+
+type AvailableMessages = {
+    "message": {
+        "theme": Value;
     };
+    "message.key": never;
+    "message.keyx": never;
+    "createx": never;
+    "create": never;
+    "cooked2.hype": {
+        "file2": Value;
+    };
+    "coo": {
+        "lastChecked": Value;
+    };
+    "coo.k": never;
+    "maker": never;
+    "pop": never;
+    "pxoppy": never;
+};
+
+export type GeneratedLocalesTypings = {
+    locales: AvailableLocales;
+    messages: AvailableMessages;
 };

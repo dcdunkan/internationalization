@@ -1,9 +1,6 @@
 import { I18n, I18nFlavor } from "./i18n.ts";
 import { Bot, Context } from "https://deno.land/x/grammy@v1.36.1/mod.ts";
-import {
-    GeneratedLocalesData,
-    GeneratedMessageTypes,
-} from "./locales/types.d.ts";
+import { GeneratedLocalesTypings } from "./locales/types.d.ts";
 import { UserFromGetMe } from "https://deno.land/x/grammy@v1.36.1/types.ts";
 
 type MyContext = Context & I18nFlavor<GeneratedMessageTypes>;
@@ -140,16 +137,6 @@ type TFn<
         : [variables: M[MK]]
 ) => string;
 
-type SampleMessages = {
-    locales: "en" | "de";
-    messages: {
-        readonly "vars": {
-            readonly first: string;
-        };
-        readonly "no-vars": never;
-    };
-};
-
 class I<LD extends LocalesData = LocalesData> {
     constructor(o: {
         fallbackLocale: Locales<LD>;
@@ -169,15 +156,25 @@ class I<LD extends LocalesData = LocalesData> {
     }
 }
 
+type SampleMessages = {
+    locales: "en" | "de";
+    messages: {
+        readonly "vars": {
+            readonly first: string;
+        };
+        readonly "no-vars": never;
+    };
+};
+
 const i = new I<SampleMessages>({ fallbackLocale: "" });
 
 i.translate("ff", "no-vars");
 i.translate("de", "no-vars");
 i.translate("de", "no-vars", {});
-i.translate("de", "vars");
+i.translate("de", "d");
 i.translate("de", "vars", {});
 i.translate("de", "vars", {
-    first: "string",
+    name: "string",
 });
 
 const i2 = new I({ fallbackLocale: "" });
@@ -219,7 +216,9 @@ adapter2.translate("de", "vars2", { one: "" });
 adapter2.translate("de", "vars2", { two: "" });
 adapter2.translate("de", "vars2", { one: " ", two: "" });
 
-const adapter3 = new FluentAdapter<GeneratedLocalesData>({
+const adapter3 = new FluentAdapter<GeneratedLocalesTypings>({
     fallbackLocale: "en",
 });
 adapter3.translate("en", "message", { theme: 1 });
+
+adapter3.translate("de", "coo", { lastChecked: new Date() });

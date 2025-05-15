@@ -2,10 +2,10 @@ message = Message {$theme}
     .key = New Key
     .keyx = New Key 2
 
-create = Hi
+createx = Hi
 create = Hi 2
 
-cooked =
+cooked2 =
     .hype = Jerry { $file2 }
 
 coo = d { DATETIME($lastChecked, day: "numeric", month: "long") }
@@ -14,4 +14,4 @@ coo = d { DATETIME($lastChecked, day: "numeric", month: "long") }
 maker = k
 pop = this is a popper
 
-poppyx = poppp
+pxoppy = popppd

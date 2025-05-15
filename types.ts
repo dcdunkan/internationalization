@@ -1,4 +1,4 @@
-import { Context } from "https://lib.deno.dev/x/grammy@1.x/mod.ts";
+import type { Context } from "https://lib.deno.dev/x/grammy@1.x/mod.ts";
 
 export type KeyOf<T> = string & keyof T;
 export type StringWithSuggestions<S extends string> =
@@ -39,3 +39,14 @@ export type TranslateFunction<LT extends LocalesTypings> = <
             ? [variables?: Messages<LT>[MK]]
         : [variables: Messages<LT>[MK]]
 ) => string;
+
+export interface ResourceLoadable<T> {
+    /**
+     * Accepts a translation resource as string.
+     *
+     * @param locale Locale which the resource belongs to.
+     * @param source Resource content.
+     * @param options Additional resource options.
+     */
+    loadResource(locale: string, source: string, options?: T): unknown;
+}

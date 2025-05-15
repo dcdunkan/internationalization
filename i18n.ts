@@ -1,8 +1,7 @@
-import {
-    type Context,
-    type MiddlewareFn,
+import type {
+    Context,
+    MiddlewareFn,
 } from "https://lib.deno.dev/x/grammy@1.x/mod.ts";
-import { createDebug } from "jsr:@grammyjs/debug@0.2.1";
 import type {
     LocaleNegotiator,
     Locales,
@@ -13,9 +12,17 @@ import type {
     TranslateFunction,
 } from "./types.ts";
 import { isValidLocale } from "./utilities.ts";
+import { createDebug } from "jsr:@grammyjs/debug@0.2.1";
 
 const debug = createDebug("grammy:i18n");
 
+/**
+ * A format adapter is an abstraction that provides translate capabilities to
+ * any localization format. Format adapters helps enable localization regardless
+ * of the localization format used. Format adapters should manage the
+ * translation resources and expose a translate function that can be called from
+ * the i18n instance.
+ */
 export interface FormatAdapter<
     LT extends LocalesTypings = LocalesTypings,
 > {
@@ -27,7 +34,14 @@ export interface FormatAdapter<
      * Get the list of locales registered in the adapter.
      */
     getLocales(): string[];
-
+    /**
+     * Formats and returns a message string. Falling back of locale is also
+     * handled by this function.
+     *
+     * @param locale Locale to use when translating.
+     * @param messageKey Message key to be used.
+     * @param args Variables to be passed for formatting the message data.
+     */
     translate<
         L extends Locales<LT>,
         MK extends MessageKey<LT, Messages<LT>>,
@@ -41,11 +55,38 @@ export interface FormatAdapter<
     ): string;
 }
 
+/**
+ * Context flavor for the outside middleware tree. Installs `ctx.translate` and
+ * `ctx.i18n` that can be used for translating and handling the i18n instance of
+ * the current update.
+ */
 export interface I18nFlavor<LT extends LocalesTypings = LocalesTypings> {
+    /**
+     * I18n context namespace object.
+     */
     i18n: {
+        /**
+         * Uses the locale specified to be used in rest of the translations.
+         *
+         * @param locale Locale to use in rest of the translations.
+         */
         useLocale: (locale: string) => void;
+        /**
+         * Calls the locale negotiator and sets the negotiated locale.
+         *
+         * @returns The locale returned by the locale negotiator.
+         */
         negotiateLocale: () => Promise<NegotiatorResult>;
     };
+    /**
+     * Formats and returns a message string using the adapter.
+     *
+     * @param locale Locale to use when translating.
+     * @param messageKey Message key to be used.
+     * @param args Variables to be passed for formatting the message data.
+     *
+     * @returns The translated string.
+     */
     translate: TranslateFunction<LT>;
 }
 
@@ -56,7 +97,13 @@ export class I18n<
     #localeNegotiator: LocaleNegotiator<C>;
 
     constructor(
+        /**
+         * Adapter for parsing and managing translation sources.
+         */
         private adapter: FormatAdapter<LT>,
+        /**
+         * Optional options for the i18n plugin.
+         */
         options?: {
             /**
              * Custom locale negotiator for utilising external sources or
@@ -74,8 +121,16 @@ export class I18n<
         if (!isValidLocale(adapter.fallbackLocale)) {
             throw new Error("Must set a valid fallback (default) locale.");
         }
+
         this.#localeNegotiator = options?.localeNegotiator ??
             ((ctx) => ctx.from?.language_code);
+    }
+
+    /**
+     * Fallback (default) locale of the adapter.
+     */
+    get fallbackLocale(): string {
+        return this.adapter.fallbackLocale;
     }
 
     /**
@@ -85,6 +140,13 @@ export class I18n<
         return this.adapter.getLocales();
     }
 
+    /**
+     * Formats and returns a message string using the adapter.
+     *
+     * @param locale Locale to use when translating.
+     * @param messageKey Message key to be used.
+     * @param args Variables to be passed for formatting the message data.
+     */
     translate<
         L extends Locales<LT>,
         M extends Messages<LT>,
@@ -100,6 +162,14 @@ export class I18n<
         return this.adapter.translate(locale, messageKey, ...args);
     }
 
+    /**
+     * Middleware for the i18n plugin.
+     *
+     * This middleware installs the `translate` function to the context object
+     * of the current update bounded to the locale negotiated. It is important
+     * that you install this middleware before you install any other middleware
+     * that calls the `translate` function.
+     */
     middleware(): MiddlewareFn<C & I18nFlavor<LT>> {
         const { fallbackLocale } = this.adapter;
         const localeNegotiator = this.#localeNegotiator;

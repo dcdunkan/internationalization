@@ -1,18 +1,19 @@
-import { createDebug } from "jsr:@grammyjs/debug@0.2.1";
 import {
     FluentBundle,
     FluentResource,
     type Message,
 } from "npm:@fluent/bundle@0.19.1";
 import { negotiateLanguages } from "npm:@fluent/langneg@0.7.0";
-import { FormatAdapter } from "./i18n.ts";
+import type { FormatAdapter } from "./i18n.ts";
 import { isValidLocale } from "./utilities.ts";
-import type { Locales, LocalesTypings, MessageKey, Messages } from "./types.ts";
-
-import { walk, type WalkOptions } from "jsr:@std/fs@1/walk";
-import { SEPARATOR } from "jsr:@std/path@1/constants";
-import { relative } from "jsr:@std/path@1/relative";
-import { resolve } from "jsr:@std/path@^1/resolve";
+import type {
+    Locales,
+    LocalesTypings,
+    MessageKey,
+    Messages,
+    ResourceLoadable,
+} from "./types.ts";
+import { createDebug } from "jsr:@grammyjs/debug@0.2.1";
 
 const debug = createDebug("grammy:i18n-fluent");
 
@@ -30,7 +31,7 @@ export interface Key {
 const DEFAULT_ALLOW_OVERRIDES = false;
 
 export class FluentAdapter<LT extends LocalesTypings = LocalesTypings>
-    implements FormatAdapter<LT> {
+    implements FormatAdapter<LT>, ResourceLoadable<ResourceOptions> {
     // While FluentBundle-s are capable of being the carrier of more than one
     // locales at a time, here each bundle can carry only one locale.
     #bundles: Map<string, FluentBundle>;
@@ -73,7 +74,7 @@ export class FluentAdapter<LT extends LocalesTypings = LocalesTypings>
     loadResource(
         locale: string,
         source: string,
-        options?: ResourceOptions,
+        resourceOptions?: ResourceOptions,
     ): Error[] {
         if (!isValidLocale(locale)) {
             throw new Error(`The locale ${locale} seems invalid.`);
@@ -84,7 +85,7 @@ export class FluentAdapter<LT extends LocalesTypings = LocalesTypings>
             // todo: should allow multiple locales per bundle? Seems useless in this case
             bundle = new FluentBundle(locale, {
                 ...this.options.bundleOptions,
-                ...options?.bundleOptions,
+                ...resourceOptions?.bundleOptions,
             });
             debug(`Creating a bundle for the locale '${locale}'`);
             this.#bundles.set(locale, bundle);
@@ -92,10 +93,9 @@ export class FluentAdapter<LT extends LocalesTypings = LocalesTypings>
 
         const resource = new FluentResource(source);
         const errors = bundle.addResource(resource, {
-            allowOverrides: options?.allowOverrides ??
+            allowOverrides: resourceOptions?.allowOverrides ??
                 DEFAULT_ALLOW_OVERRIDES,
         });
-
         return errors;
     }
 
@@ -205,53 +205,4 @@ function parseMessageKey(key: string): Key {
         throw new Error(`Invalid message key segments in key: '${key}'`);
     }
     return { id: segments[0], attr: segments[1] };
-}
-
-export async function loadLocalesDirectory<
-    LT extends LocalesTypings = LocalesTypings,
->(
-    adapter: FluentAdapter<LT>,
-    path: string,
-    options?: {
-        walkOptions?: WalkOptions;
-        resourceOptions?: ResourceOptions;
-    },
-): Promise<void> {
-    const cwd = resolve(path);
-
-    for await (const localeDir of Deno.readDir(cwd)) {
-        if (!localeDir.isDirectory) continue;
-
-        const path = resolve(cwd, localeDir.name);
-
-        const walker = walk(path, { // TODO: glob pattern support
-            followSymlinks: true,
-            ...(options?.walkOptions ?? {}), // overwrite
-            includeDirs: false,
-            includeFiles: true,
-            exts: [".ftl"],
-        });
-
-        for await (const entry of walker) {
-            const resolved = resolve(entry.path);
-            const path = relative(cwd, resolved);
-            const [locale] = path.split(SEPARATOR);
-            const content = await Deno.readTextFile(entry.path);
-            const errors = adapter.loadResource(
-                locale,
-                content,
-                options?.resourceOptions,
-            );
-            console.log(locale, resolved);
-            for (const error of errors) {
-                console.error(
-                    `%cerror:%c ${error.message}\n    at ${resolved}`,
-                    "color: red",
-                    "color: none",
-                );
-            }
-        }
-    }
-
-    return;
 }

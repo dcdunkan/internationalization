@@ -1,9 +1,10 @@
-import { log, makeIndent, yellow } from "./deps.ts";
+import { log } from "./deps.ts";
 import {
     type Expression,
     parse,
     type PatternElement,
 } from "npm:@fluent/syntax@0.19.0";
+import { yellow } from "jsr:@std/fmt@^1/colors";
 
 export default async function (sources: Set<string>) {
     const ALLOW_OVERRIDES = false;
@@ -11,7 +12,6 @@ export default async function (sources: Set<string>) {
         source: string;
         placeables: Set<string>;
     }>();
-
     for (const file of sources) {
         let content: string;
         try {
@@ -29,7 +29,7 @@ export default async function (sources: Set<string>) {
         const resource = parse(content, {});
 
         for (const entry of resource.body) {
-            // todo: introduce errors, from parsing
+            // todo: introduce errors, from parsing, maybe in another cli subcommand?
             if (entry.type !== "Message") continue;
 
             if (entry.value != null) {
@@ -74,26 +74,19 @@ export default async function (sources: Set<string>) {
         }
     }
 
-    const indent = makeIndent(4);
-    const output: string[] = [
-        "type Value = string | number | Date;",
-        "export type GeneratedLocalesData = {",
-        indent(1) + "locales: string;",
-        indent(1) + "messages: {",
-    ];
+    const additional = "type Value = string | number | Date;";
+    const output: Record<string, Record<string, string>> = {};
     for (const [messageKey, { placeables }] of messages.entries()) {
-        if (placeables.size === 0) {
-            output.push(indent(2) + `"${messageKey}": never;`);
-        } else {
-            output.push(indent(2) + `"${messageKey}": {`);
-            for (const placeable of placeables) {
-                output.push(indent(3) + `"${placeable}": Value;`);
-            }
-            output.push(`${indent(2)}};`);
+        const variableMap: Record<string, string> = {};
+        for (const placeable of placeables) {
+            variableMap[placeable] = "Value";
         }
+        output[messageKey] = variableMap;
     }
-    output.push(indent(1) + "};", "};");
-    return output.join("\n");
+    return {
+        messages: output,
+        additional: additional,
+    };
 }
 
 function extractExpressions(elements: PatternElement[]): Expression[] {

@@ -1,6 +1,3 @@
-export { yellow } from "jsr:@std/fmt@^1/colors";
-export { extname, resolve } from "jsr:@std/path@^1";
-
 import { bold, dim, red } from "jsr:@std/fmt@^1/colors";
 
 export const VERSION = "0.1";
